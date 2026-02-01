@@ -4,7 +4,7 @@ entity main is
 port(
 	clk, data_in, rst_n : in STD_LOGIC;
 	stored_val : out STD_LOGIC_VECTOR(7 downto 0);
-	counter_out : out UNSIGNED(3 downto 0)
+	timer_out : out UNSIGNED(3 downto 0)
 
 );
 end entity main; 
@@ -16,9 +16,11 @@ CONSTANT baud_rate : integer := 9600; --ENTER BAUDRATE HERE!
 CONSTANT bit_time : integer := clk_freq/baud_rate;
 signal reg : STD_LOGIC_VECTOR(7 downto 0) := (others=>'0');
 signal counter : UNSIGNED(3 downto 0);
-signal timer : UNSIGNED(11 downto 0);
-type statetype is (IDLEREAD, IDLEWAIT, OPREAD, OPWAIT, STOPWAIT);
+signal timer : UNSIGNED(20 downto 0);
+type statetype is (waiting, reading);
 signal state : statetype;
+type sysstate is (IDLE, READING, STOP);
+signal sys_state : sysstate := IDLE; 
 begin
 --main control process
 process(clk)
@@ -26,37 +28,40 @@ begin
 if(rising_edge(clk)) then
 	--reset conditions
 	if(rst_n = '0') then
-		state <= IDLEREAD;
+		sys_state <= IDLE;
+		state <= reading;
 		counter <= (others => '0');
 	else
 	--initialization
-	if(state = IDLEREAD and data_in = '0') then
-		state <= IDLEWAIT;
+	if(sys_state = IDLE and state = reading and data_in = '0') then
+		state <= waiting;
 		counter <= (others => '0');
-	elsif(state = IDLEWAIT) then
+	elsif(sys_state = IDLE and state = waiting) then
 	--initial waiting (1.5 times)
 	if(timer = bit_time + bit_time/2) then
-		state <= OPREAD;
+		state <= reading;
+		sys_state <= READING;
 	end if; --end initial waiting
 	end if; --end initialization if
 	--reading normal data
-	if(state = OPREAD) then
-		state <= OPWAIT;
+	if(sys_state = READING and state = reading) then
+		state <= waiting;
 		counter <= counter + 1;
 	end if;
 	--waiting between normal data inputs
-	if(state = OPWAIT) then
+	if(sys_state = READING and state = waiting) then
 		if(timer = bit_time and counter /= 8) then		
-		state <= OPREAD;
+		state <= reading;
 		--ending condition, triggers after the last bit has been inputted
-		elsif(counter = 8 and state = OPWAIT) then
-			state <= STOPWAIT;
+		elsif(counter = 8 and state = waiting) then
+			sys_state <= STOP;
 		end if;
 	end if;
 	--stop condition
-	if(state = STOPWAIT) then
+	if(sys_state = STOP) then
 		if(timer = bit_time) then
-			state <= IDLEREAD;
+			state <= reading;
+			sys_state <= IDLE;
 		end if;
 	end if;
 	
@@ -69,7 +74,7 @@ process(clk)
 begin
 if(rising_edge(clk)) then
 if(rst_n='1') then
-	if(state = IDLEWAIT or state = OPWAIT or state = STOPWAIT) then
+	if(state = waiting) then
 		timer <= timer + 1;
 	else
 		timer <= (others => '0');
@@ -84,10 +89,10 @@ end process;
 process(clk)
 begin
 if(rising_edge(clk)) then
-	if(state = OPREAD) then
+	if(state = reading and sys_state = READING) then
 		reg(TO_INTEGER(counter)) <= data_in; 
 	end if;
-	if(state = IDLEREAD) then
+	if(state = reading and sys_state = IDLE) then
 		reg <= (others=>'0');
 	end if;
 end if;
@@ -95,5 +100,5 @@ end process;
 
 --outputs
 stored_val <= reg;
-counter_out <= counter;
+timer_out <= counter;
 end architecture synth;
