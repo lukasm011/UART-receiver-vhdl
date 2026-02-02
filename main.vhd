@@ -85,7 +85,8 @@ process(clk)
 begin
 if(rising_edge(clk)) then
 	if(state = OPREAD) then
-		reg(TO_INTEGER(counter)) <= data_in; 
+		reg <= data_in & reg(7 downto 1);
+
 	end if;
 	if(state = IDLEREAD) then
 		reg <= (others=>'0');
